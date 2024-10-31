@@ -1880,10 +1880,6 @@ def append_url_to_main_urls(content, app_name):
         print(f"√ 在第{end_index + 1}行插入新配置")
         new_content = '\n'.join(lines)
 
-        print('================new content==============================')
-        print(new_content)
-        print('================new content==============================')
-
         # 2.6 验证结果
         print("\n# 2.6 结果验证")
         valid, msg = validate_main_urls_result(new_content)
