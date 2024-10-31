@@ -2326,9 +2326,6 @@ def main():
                 print("\n× 错误: 添加应用模式需要指定至少一个应用名称")
                 return
 
-            # 切换到项目目录
-            os.chdir(project_name)
-
             # 检查apps目录
             apps_dir = Path.cwd() / 'apps'
             if not apps_dir.exists():
