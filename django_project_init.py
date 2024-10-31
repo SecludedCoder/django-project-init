@@ -2302,6 +2302,7 @@ def main():
             # 创建项目目录结构
             create_project_structure(project_name)
 
+
             # 检测重复应用
             new_apps, duplicate_apps = filter_new_apps(INITIAL_APPS)
 
