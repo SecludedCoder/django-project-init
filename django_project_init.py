@@ -741,6 +741,12 @@ def create_project_structure(project_name):
     """创建项目的完整目录结构和文件"""
     base_dir = Path.cwd() / project_name
 
+    # 处理应用列表配置
+    app_configs = []
+    if INITIAL_APPS:
+        for app in INITIAL_APPS:
+            app_configs.append(f"    '{app}.apps.{app.title()}Config',")
+
     # 创建项目根目录
     if not create_directory(base_dir):
         return True
@@ -770,6 +776,7 @@ def create_project_structure(project_name):
             create_file(path / '__init__.py',
                         f'"""\nFile: {directory}/__init__.py\nPurpose: {directory}包的初始化文件\n"""\n')
 
+    # 构建模板目录列表
     templates_dirs = ["            BASE_DIR / 'templates'"]
     for app in INITIAL_APPS:
         templates_dirs.append(f"            BASE_DIR / 'apps' / '{app}' / 'templates'")
@@ -807,6 +814,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+{chr(10).join(app_configs) if app_configs else ''}
 ]
 
 MIDDLEWARE = [
@@ -1472,16 +1480,6 @@ def truncate_string(text, length=100, suffix='...'):
     # 创建初始应用
     for app_name in INITIAL_APPS:
         create_app_structure(app_name, project_name, Path.cwd())
-        # 将应用添加到INSTALLED_APPS
-        with open('config/settings/base.py', 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        if f"'{app_name}'" not in content:
-            content = content.replace(
-                "INSTALLED_APPS = [",
-                f"INSTALLED_APPS = [\n    '{app_name}.apps.{app_name.title()}Config',"
-            )
-            create_file('config/settings/base.py', content)
 
         # 添加URL配置
         with open('config/urls.py', 'r', encoding='utf-8') as f:
@@ -2607,9 +2605,6 @@ def main():
         # 创建项目目录结构
         create_project_structure(project_name)
 
-        # 切换到项目目录进行应用检测
-        os.chdir(project_name)
-
         # 检测重复应用
         new_apps, duplicate_apps = filter_new_apps(INITIAL_APPS)
 
@@ -2666,6 +2661,9 @@ def main():
             if not args.apps:
                 print("\n× 错误: 添加应用模式需要指定至少一个应用名称")
                 return
+
+            # 切换到项目目录
+            os.chdir(project_name)
 
             # 检查apps目录
             apps_dir = Path.cwd() / 'apps'
