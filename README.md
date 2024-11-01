@@ -64,6 +64,18 @@ python django_project_init.py --mode add -p myproject -a newapp
 python django_project_init.py --mode add -p myproject -a newapp --auto-update
 ```
 
+### 导出开发指南
+
+1. 使用默认文件名：
+```bash
+python django_project_init.py --guide
+```
+
+2. 指定输出文件：
+```bash
+python django_project_init.py --guide --guide-output custom_guide.md
+```
+
 ### 恢复配置文件
 
 如果需要还原之前的配置：
@@ -108,6 +120,12 @@ project_name/
 ```
 app_name/
 ├── migrations/           # 数据库迁移
+├── core/                # [新增] 核心业务逻辑目录
+│   ├── __init__.py
+│   ├── services/       # 核心服务实现
+│   ├── models/        # 核心数据模型（非ORM）
+│   ├── utils/         # 核心工具函数
+│   └── exceptions/    # 核心异常定义
 ├── templates/           # 应用模板
 │   └── app_name/       # 应用特定模板
 │       └── components/ # 组件模板
@@ -120,8 +138,8 @@ app_name/
 │   ├── serializers.py # API序列化器
 │   ├── views.py       # API视图
 │   └── urls.py        # API路由配置
-├── services/          # 业务服务层
-│   └── data_service.py
+├── services/          # 业务服务层（集成层）
+│   └── app_facade.py  # Django集成服务
 ├── helpers/           # 辅助函数
 │   └── formatters.py
 ├── tests/            # 测试文件
@@ -131,22 +149,22 @@ app_name/
 ├── management/       # 管理命令
 │   └── commands/
 │       └── process_data.py
-├── models.py         # 数据模型
-├── views.py         # 视图
+├── models.py         # Django ORM模型
+├── views.py         # Django视图
 ├── urls.py          # URL配置
 ├── forms.py         # 表单
 ├── apps.py         # 应用配置
 ├── admin.py       # 管理接口
 ├── constants.py   # 常量定义
-├── exceptions.py  # 自定义异常
-└── utils.py      # 工具函数
+├── exceptions.py  # Django相关异常
+└── utils.py      # Django相关工具函数
 ```
 
 ## 详细使用说明
 
 ### 运行模式
 
-脚本支持三种运行模式：
+脚本支持四种运行模式：
 
 1. **初始化模式（init）**
    - 创建新的Django项目
@@ -158,7 +176,12 @@ app_name/
    - 可选择自动更新配置
    - 生成配置指南
 
-3. **恢复模式（restore）**
+3. **开发指南模式（guide）**
+   - 生成独立的开发指南文档
+   - 包含最佳实践和示例
+   - 可自定义输出位置
+
+4. **恢复模式（restore）**
    - 恢复配置文件到最近的备份
    - 支持增量恢复
 
@@ -171,6 +194,8 @@ app_name/
 | -a, --apps | 要创建的应用列表 | ['main'] | -a user blog |
 | --auto-update | 自动更新配置（add模式可用） | False | --auto-update |
 | --restore | 还原配置到最新备份 | False | --restore |
+| --guide | 生成开发指南 | False | --guide |
+| --guide-output | 指定指南输出文件 | app_development_guide.md | --guide-output custom.md |
 
 ### 文件影响说明
 
@@ -186,6 +211,11 @@ app_name/
 - ⚡ 自动备份修改的文件到：
   - `config/app_append_backups/base_backups/`
   - `config/app_append_backups/urls_backups/`
+
+#### guide模式:
+- 📚 只生成开发指南文档
+- 🎯 不影响项目结构和配置
+- 📝 可自定义输出位置和文件名
 
 #### restore模式:
 - 🔄 只恢复配置文件

@@ -83,6 +83,17 @@ def parse_arguments():
                       default=False,
                       help='自动更新项目配置文件（settings.py和urls.py）')
 
+    # 开发指南输出参数
+    parser.add_argument('--guide',
+                        action='store_true',
+                        default=False,
+                        help='只输出开发指南文档')
+
+    # 开发指南输出文件名参数
+    parser.add_argument('--guide-output',
+                        default='app_development_guide.md',
+                        help='开发指南输出文件名(默认: app_development_guide.md)')
+
     args = parser.parse_args()
 
     # 当使用restore时,不需要检查其他参数
@@ -133,17 +144,18 @@ def create_app_structure(app_name, project_name, base_dir):
 
     # 创建应用基础目录
     directories = [
-        'migrations',  # 保持不变
-        f'templates/{app_name}',  # 移除多余的app_name前缀
-        f'templates/{app_name}/components',  # 移除多余的app_name前缀
-        f'static/{app_name}/css',  # 移除多余的app_name前缀
-        f'static/{app_name}/js',  # 移除多余的app_name前缀
-        f'static/{app_name}/images',  # 移除多余的app_name前缀
-        'services',  # 直接放在应用根目录下
-        'helpers',  # 直接放在应用根目录下
-        'api',  # 保持不变
-        'tests/test_services',  # 保持不变
-        'management/commands',  # 保持不变
+        'migrations',  # [Django必需] 数据库迁移文件目录
+        'core',  # [自定义] 核心业务逻辑目录 - 存放所有与Django无关的业务逻辑、算法、数据处理等代码
+        f'templates/{app_name}',  # [Django] 应用级HTML模板目录
+        f'templates/{app_name}/components',  # [Django] 可重用的模板组件目录
+        f'static/{app_name}/css',  # [Django] CSS样式文件目录
+        f'static/{app_name}/js',  # [Django] JavaScript文件目录
+        f'static/{app_name}/images',  # [Django] 图片资源目录
+        'services',  # [Django集成] 服务层目录 - 主要用于连接core层和Django层的facade服务
+        'helpers',  # [Django集成] 辅助函数目录 - 处理Django相关的工具函数
+        'api',  # [Django REST] REST API相关代码目录
+        'tests/test_services',  # [测试] 服务层测试目录
+        'management/commands',  # [Django] 自定义管理命令目录
     ]
 
     for directory in directories:
@@ -395,7 +407,8 @@ class Command(BaseCommand):
 ''',
 
         f'static/{app_name}/js/main.js': '''// Application specific JavaScript
-'''
+''',
+        'APP_DEVELOPMENT_GUIDE.md': get_app_development_guide(),
     }
 
     for file_path, content in files.items():
@@ -403,6 +416,326 @@ class Command(BaseCommand):
 
     return True
 
+
+def get_app_development_guide():
+    """获取应用开发指南内容"""
+    return '''# Django应用开发规范指南
+
+## 1. 目录结构与职责
+
+### 1.1 核心业务目录 (core/)
+- 用途：存放所有与Django无关的业务逻辑
+- 特点：可独立运行、测试和复用
+- 适合内容：
+  * 数据处理算法
+  * 业务逻辑
+  * 工具函数
+  * 自定义异常
+  * 数据模型（非Django ORM）
+
+### 1.2 服务集成目录 (services/)
+- 用途：连接core层和Django层
+- 特点：负责数据转换和上下文处理
+- 适合内容：
+  * Facade服务类
+  * 数据转换逻辑
+  * Django特定的服务封装
+
+### 1.3 API目录 (api/)
+- 用途：REST API实现
+- 适合内容：
+  * 序列化器
+  * API视图
+  * URL路由配置
+
+### 1.4 模板目录 (templates/)
+- 用途：HTML模板
+- 适合内容：
+  * 页面模板
+  * 可重用组件
+
+### 1.5 静态文件目录 (static/)
+- 用途：前端资源
+- 适合内容：
+  * CSS样式
+  * JavaScript脚本
+  * 图片资源
+
+### 1.6 其他目录
+- migrations/: 数据库迁移文件
+- helpers/: Django相关的辅助函数
+- tests/: 测试代码
+- management/: 自定义管理命令
+
+## 2. 应用开发流程示例：Excel文件上传与显示
+
+### 开发流程示例说明
+本示例展示了一个完整的Django应用开发流程，功能是上传Excel文件并显示内容。
+通过这个例子说明如何：
+1. 在core中开发核心功能
+2. 通过服务层集成到Django
+3. 提供API接口
+4. 实现前端界面
+
+### 2.1 需求描述
+创建一个应用，允许用户：
+1. 上传Excel文件
+2. 解析并显示内容
+3. 基本的数据验证
+
+### 2.2 示例开发步骤
+
+#### Step 1: 核心功能实现 (core/)
+```python
+# core/excel_processor.py
+import pandas as pd
+from typing import Dict, Any
+
+class ExcelProcessor:
+    """Excel处理核心类"""
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def read_excel(self) -> Dict[str, Any]:
+        """读取并解析Excel文件"""
+        try:
+            df = pd.read_excel(self.file_path)
+            return {
+                'columns': df.columns.tolist(),
+                'data': df.to_dict('records'),
+                'row_count': len(df),
+                'col_count': len(df.columns)
+            }
+        except Exception as e:
+            raise ExcelProcessError(f"Excel处理错误: {str(e)}")
+
+# core/exceptions.py
+class ExcelProcessError(Exception):
+    """Excel处理相关的异常"""
+    pass
+```
+
+#### Step 2: 服务层实现 (services/)
+```python
+# services/excel_service.py
+from django.core.files.uploadedfile import UploadedFile
+from ..core.excel_processor import ExcelProcessor, ExcelProcessError
+
+class ExcelService:
+    """Excel处理服务"""
+    def process_upload(self, uploaded_file: UploadedFile) -> dict:
+        """处理上传的Excel文件"""
+        try:
+            # 保存上传文件
+            file_path = self._save_file(uploaded_file)
+
+            # 使用核心处理器
+            processor = ExcelProcessor(file_path)
+            result = processor.read_excel()
+
+            return {
+                'status': 'success',
+                'data': result
+            }
+        except ExcelProcessError as e:
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+
+    def _save_file(self, file: UploadedFile) -> str:
+        """保存上传的文件"""
+        # 文件保存逻辑
+        pass
+```
+
+#### Step 3: API实现 (api/)
+```python
+# api/serializers.py
+from rest_framework import serializers
+
+class ExcelUploadSerializer(serializers.Serializer):
+    file = serializers.FileField()
+
+# api/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from ..services.excel_service import ExcelService
+
+class ExcelUploadView(APIView):
+    def post(self, request):
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'error': 'No file uploaded'}, status=400)
+
+        service = ExcelService()
+        result = service.process_upload(file)
+        return Response(result)
+```
+
+#### Step 4: URL配置 (urls.py)
+```python
+from django.urls import path
+from .api.views import ExcelUploadView
+
+app_name = 'excel_processor'
+
+urlpatterns = [
+    path('upload/', ExcelUploadView.as_view(), name='upload'),
+]
+```
+
+#### Step 5: 前端模板 (templates/)
+```html
+<!-- templates/excel_processor/upload.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h2>Excel文件上传</h2>
+    <form id="uploadForm">
+        {% csrf_token %}
+        <input type="file" name="file" accept=".xlsx,.xls">
+        <button type="submit">上传</button>
+    </form>
+    <div id="result"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('uploadForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    try {
+        const response = await fetch('/api/excel/upload/', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        // 显示结果
+        displayResult(result);
+    } catch (error) {
+        console.error('Upload failed:', error);
+    }
+};
+</script>
+{% endblock %}
+```
+
+### 2.3 开发顺序建议
+
+1. **先开发核心功能**
+   - 在core/目录下实现基本功能
+   - 可以写个简单的测试脚本验证
+   - 确保功能正确且独立可用
+
+2. **编写服务层**
+   - 创建services/下的服务类
+   - 处理文件上传等Django特定逻辑
+   - 调用core层的功能
+
+3. **实现API**
+   - 创建序列化器
+   - 实现API视图
+   - 配置URL路由
+
+4. **前端开发**
+   - 创建HTML模板
+   - 添加必要的JS/CSS
+   - 实现用户交互
+
+### 2.4 测试规范
+
+1. **核心功能测试**
+```python
+# tests/test_core/test_excel_processor.py
+import unittest
+from ...core.excel_processor import ExcelProcessor
+
+class TestExcelProcessor(unittest.TestCase):
+    def test_read_excel(self):
+        processor = ExcelProcessor('test.xlsx')
+        result = processor.read_excel()
+        self.assertIn('columns', result)
+        self.assertIn('data', result)
+```
+
+2. **服务层测试**
+```python
+# tests/test_services/test_excel_service.py
+from django.test import TestCase
+from ...services.excel_service import ExcelService
+
+class TestExcelService(TestCase):
+    def test_process_upload(self):
+        service = ExcelService()
+        # 测试文件上传处理
+```
+
+3. **API测试**
+```python
+# tests/test_api.py
+from django.test import TestCase
+from django.urls import reverse
+
+class TestExcelAPI(TestCase):
+    def test_upload_endpoint(self):
+        url = reverse('excel_processor:upload')
+        # 测试API端点
+```
+
+## 3. 最佳实践建议
+
+### 3.1 核心开发原则
+1. 核心逻辑放在core/目录
+2. 保持核心功能的独立性
+3. 使用依赖注入而非直接依赖
+4. 详细的异常处理
+5. 完整的类型注解
+
+### 3.2 服务层原则
+1. 职责单一
+2. 处理所有Django相关的逻辑
+3. 错误转换和日志记录
+4. 统一的返回格式
+
+### 3.3 API设计原则
+1. RESTful规范
+2. 适当的状态码
+3. 清晰的错误信息
+4. 版本控制
+
+### 3.4 文档建议
+1. 清晰的注释
+2. API文档
+3. 部署说明
+4. 环境要求
+
+## 4. 常见问题
+
+### 4.1 目录使用
+Q: 什么代码应该放在core/目录？
+A: 所有与Django无关的业务逻辑，如数据处理、算法实现等。
+
+Q: services/和helpers/的区别？
+A: services/包含业务服务类，helpers/包含工具函数。
+
+### 4.2 开发流程
+Q: 为什么要先开发core层？
+A: 确保核心功能独立可用，便于测试和维护。
+
+Q: 如何处理文件上传？
+A: 文件处理逻辑放在服务层，只传递文件路径给core层。
+
+## 5. 其他注意事项
+
+1. 异步处理
+2. 缓存策略
+3. 批处理
+4. 性能优化
+5. 安全考虑
+'''
 
 def create_project_structure(project_name):
     """创建项目的完整目录结构和文件"""
@@ -2219,6 +2552,18 @@ def main():
     """主函数：处理参数并根据模式执行相应操作"""
     # 解析参数
     args = parse_arguments()
+
+    # 优先处理guide参数
+    if args.guide:
+        guide_content = get_app_development_guide()
+        output_path = Path(args.guide_output)
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(guide_content)
+            print(f"\n✓ 开发指南已生成: {output_path}")
+        except Exception as e:
+            print(f"\n✗ 开发指南生成失败: {str(e)}")
+        return
 
     # 优先处理restore参数
     if args.restore:
