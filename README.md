@@ -130,7 +130,7 @@ project_name/
 │   ├── info_YYYYMMDD.log     # 信息日志
 │   └── error_YYYYMMDD.log    # 错误日志
 ├── docs/              # 文档
-├── utils/            # 工具函数
+├── common/            # 工具函数
 ├── .env             # 环境变量
 └── README.md        # 项目说明
 ```

@@ -206,12 +206,21 @@ def create_app_structure(app_name, project_name, base_dir):
         'management/commands',  # [Django] 自定义管理命令目录
     ]
 
+    # 确保基础目录创建成功
+    if not create_directory(app_dir):
+        return False
+
+    success = True  # 添加成功标志
+
     for directory in directories:
-        create_directory(app_dir / directory)
+        if not create_directory(app_dir / directory):
+            success = False
+            continue
         # 修改：优化__init__.py创建逻辑
         if not any(directory.startswith(prefix) for prefix in ['templates/', 'static/']):
-            create_file(app_dir / directory / '__init__.py',
-                        f'"""\nFile: apps/{app_name}/{directory}/__init__.py\nPurpose: {directory}包的初始化文件\n"""\n')
+            if not create_file(app_dir / directory / '__init__.py',
+                               f'"""\nFile: apps/{app_name}/{directory}/__init__.py\nPurpose: {directory}包的初始化文件\n"""\n'):
+                success = False
 
     # 创建应用基础文件
     files = {
@@ -501,13 +510,7 @@ class PathManager:
         new_paths = normalized_paths - self._initialized_paths
 
         if not new_paths:
-            return []  # 如果没有新路径需要添加，直接返回
-
-        # 将当前sys.path中的路径标准化用于比较
-        current_sys_paths = {{self._normalize_path(p) for p in sys.path}}
-
-        # 找出需要添加的新路径
-        paths_to_add = new_paths - current_sys_paths
+            return []
 
         # 移除可能存在的重复路径（考虑不同形式的相同路径）
         for path in list(sys.path):
@@ -517,10 +520,10 @@ class PathManager:
 
         # 添加新路径到sys.path开头
         added_paths = []
-        for path in paths_to_add:
+        for path in new_paths:  # 使用new_paths而不是paths_to_add
             sys.path.insert(0, path)
             added_paths.append(path)
-            self._initialized_paths.add(path)  # 记录已初始化的路径
+            self._initialized_paths.add(path)
 
         return added_paths
 
@@ -647,9 +650,10 @@ if __name__ == '__main__':
     }
 
     for file_path, content in files.items():
-        create_file(app_dir / file_path, content)
+        if not create_file(app_dir / file_path, content):
+            success = False
 
-    return True
+    return success
 
 
 def get_app_development_guide():
@@ -984,7 +988,7 @@ def create_project_structure(project_name):
 
     # 创建项目根目录
     if not create_directory(base_dir):
-        return True
+        return False
 
     # 切换到项目目录
     os.chdir(base_dir)
@@ -999,7 +1003,7 @@ def create_project_structure(project_name):
         'templates/shared',
         'media/uploads',
         'docs',
-        'utils',
+        'common',
         'requirements',
     ]
 
@@ -1007,7 +1011,7 @@ def create_project_structure(project_name):
     for directory in directories:
         path = Path(directory)
         create_directory(path)
-        if directory in ['apps', 'utils', 'config', 'config/settings']:
+        if directory in ['apps', 'common', 'config', 'config/settings']:
             create_file(path / '__init__.py',
                         f'"""\nFile: {directory}/__init__.py\nPurpose: {directory}包的初始化文件\n"""\n')
 
@@ -1688,8 +1692,8 @@ sudo systemctl restart gunicorn
 4. 定期备份
 '''
 
-    utils_helpers = '''"""
-File: utils/helpers.py
+    common_helpers = '''"""
+File: common/helpers.py
 Purpose: 项目级通用工具函数
 """
 
@@ -1713,8 +1717,8 @@ def truncate_string(text, length=100, suffix='...'):
     return text[:length].rsplit(' ', 1)[0] + suffix
 '''
 
-    log_utils_content = '''"""
-File: utils/log_utils.py
+    common_utils_content = '''"""
+File: common/log_utils.py
 Purpose: 项目日志工具函数
 """
 
@@ -1785,8 +1789,8 @@ def get_app_logger(app_name: str, module_name: Optional[str] = None) -> logging.
         'README.md': readme,
         'docs/api.md': api_md,
         'docs/deployment.md': deployment_md,
-        'utils/helpers.py': utils_helpers,
-        'utils/log_utils.py': log_utils_content,
+        'common/helpers.py': common_helpers,
+        'common/log_utils.py': common_utils_content,
         'templates/base.html': base_html,
         'templates/shared/header.html': shared_header,
         'templates/shared/footer.html': shared_footer,
@@ -1839,6 +1843,8 @@ def get_app_logger(app_name: str, module_name: Optional[str] = None) -> logging.
     print("3. 初始化数据库: python manage.py migrate")
     print("4. 创建超级用户: python manage.py createsuperuser")
     print("5. 运行开发服务器: python manage.py runserver")
+
+    return True
 
 
 def add_app_logger_config(app_name, project_dir='.'):
@@ -2151,20 +2157,16 @@ python manage.py migrate {app_name}
         print(f"\n✗ 配置指南生成失败: {str(e)}")
 
 def update_installed_apps(app_name):
-    """智能更新INSTALLED_APPS配置"""
     try:
         with open('config/settings/base.py', 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # 检查应用是否已经在INSTALLED_APPS中
         if f"'{app_name}'" not in content:
-            # 更智能的插入位置：在INSTALLED_APPS的自定义应用部分
             lines = content.split('\n')
             insert_pos = -1
             for i, line in enumerate(lines):
                 if 'INSTALLED_APPS = [' in line:
                     insert_pos = i + 1
-                    # 跳过Django内置应用和第三方应用
                     while i < len(lines) and ('django.contrib' in lines[i] or 'rest_framework' in lines[i]):
                         i += 1
                         insert_pos = i + 1
@@ -2172,10 +2174,12 @@ def update_installed_apps(app_name):
             if insert_pos != -1:
                 lines.insert(insert_pos, f"    '{app_name}.apps.{app_name.title()}Config',")
                 content = '\n'.join(lines)
-                create_file('config/settings/base.py', content)
-                print(f"✓ 已将 {app_name} 添加到 INSTALLED_APPS")
+                return create_file('config/settings/base.py', content)  # 使用create_file的返回值
+            return False  # 找不到插入位置
+        return True  # 应用已存在也算成功
     except Exception as e:
         print(f"! 更新INSTALLED_APPS失败: {str(e)}")
+        return False
 
 
 def update_urls_config(app_name):
@@ -3134,42 +3138,28 @@ def main():
         if args.apps is not None:
             INITIAL_APPS = args.apps
 
-        # 创建项目目录结构
-        create_project_structure(project_name)
-
-        new_apps, duplicate_apps, forbidden_apps = filter_new_apps(INITIAL_APPS)
-
-        if forbidden_apps:
-            print("\n× 错误: 以下应用名称是Django内置应用，不能使用:")
-            for name in forbidden_apps:
+        # 只检查禁止的应用名
+        has_forbidden, forbidden_names, suggestions = check_forbidden_app_names(INITIAL_APPS)
+        if has_forbidden:
+            print("\n× 错误: 检测到使用了禁止的应用名称!")
+            for name in forbidden_names:
                 print(f"  - {name}")
                 if name in APP_NAME_SUGGESTIONS:
                     print(f"    建议使用: {', '.join(APP_NAME_SUGGESTIONS[name])}")
-            print("\n请使用其他名称重新运行命令。")
             return False
 
-        if not new_apps:
-            print("\n! 注意: 所有指定的应用都已存在，跳过处理")
-            if duplicate_apps:
-                print("  重复的应用:", ", ".join(duplicate_apps))
-            return False
+        # 创建项目目录结构
+        success = create_project_structure(project_name)
+        print('++++++++++++++++++++++++++++++++++++++++++++++++++')
+        print(f'create_project_structure return {success}')
+        print('++++++++++++++++++++++++++++++++++++++++++++++++++')
 
-        # 更新INITIAL_APPS为新应用列表
-        INITIAL_APPS = new_apps
-
-        # 显示重复应用信息
-        if duplicate_apps:
-            print("\n! 以下应用已存在，将跳过处理:")
-            print("  ", ", ".join(duplicate_apps))
-
-        # 显示将要执行的操作
-        print(f"\n初始化项目：{project_name}")
-        print(f"创建应用：{', '.join(INITIAL_APPS) if INITIAL_APPS else '无'}")
-        print("(使用默认配置)" if args.mode == MODE_INIT and args.project is None and args.apps is None else "")
-
-        # 初始化项目
-        success = initialize_django_project(project_name)
-        return success
+        if success:
+            # 创建初始应用
+            for app_name in INITIAL_APPS:
+                create_app_structure(app_name, project_name, Path.cwd())
+            return True
+        return False
 
     elif args.mode == MODE_ADD_APP:
         if not project_exists:
@@ -3327,6 +3317,7 @@ if __name__ == '__main__':
     print("\n=== 开始执行项目初始化 ===")
     # 执行主程序，并获取执行结果
     success = main()
+    print(f'main 函数返回值{success}')
     # 只有在非恢复模式且主程序执行成功的情况下才执行Django命令
     if success and not any(arg in sys.argv for arg in ['--restore']):
         print("\n=== 项目初始化完成，准备执行Django命令 ===")
