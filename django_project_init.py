@@ -5,7 +5,7 @@ File: django_project_init.py
 Purpose: Django项目初始化脚本，用于创建符合最佳实践的项目结构
 """
 
-
+import datetime
 import os
 import sys
 import shutil
@@ -93,6 +93,11 @@ def parse_arguments():
     parser.add_argument('--guide-output',
                         default='app_development_guide.md',
                         help='开发指南输出文件名(默认: app_development_guide.md)')
+
+    parser.add_argument('--no-rest-swagger',
+                        action='store_true',
+                        default=False,
+                        help='不添加REST Framework和Swagger配置')
 
     args = parser.parse_args()
 
@@ -792,6 +797,7 @@ Warning: 此文件包含关键项目配置，修改前请仔细评估影响
 from pathlib import Path
 import os
 import sys
+from .logging_config import LOGGING
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -814,6 +820,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_yasg',  # Swagger/OpenAPI文档
 {chr(10).join(app_configs) if app_configs else ''}
 ]
 
@@ -883,6 +890,32 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# REST Framework配置
+REST_FRAMEWORK = {{
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',  # 开发阶段允许所有访问
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}}
+
+# Swagger配置
+SWAGGER_SETTINGS = {{
+    'USE_SESSION_AUTH': False,  # 禁用session认证
+    'JSON_EDITOR': True,        # 启用JSON编辑器
+    'SECURITY_DEFINITIONS': {{
+        'Basic': {{
+            'type': 'basic'
+        }},
+        'Bearer': {{
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }}
+    }},
+}}
 '''
 
     settings_local = '''"""
@@ -989,9 +1022,29 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from rest_framework import permissions
+from drf_yasg.views import get_schema_view
+from drf_yasg import openapi
+
+# Swagger文档视图配置
+schema_view = get_schema_view(
+   openapi.Info(
+      title="项目API文档",
+      default_version='v1',
+      description="API接口文档",
+      terms_of_service="",
+      contact=openapi.Contact(email=""),
+      license=openapi.License(name=""),
+   ),
+   public=True,
+   permission_classes=[permissions.AllowAny],
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Swagger文档URL
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 '''
 
     # 动态添加URL配置
@@ -1430,11 +1483,15 @@ def truncate_string(text, length=100, suffix='...'):
     return text[:length].rsplit(' ', 1)[0] + suffix
 '''
 
+    app_loggers = '\n'.join(get_app_logger_config(app) for app in INITIAL_APPS)
+    logging_config = get_logging_config_template().format(app_loggers=app_loggers)
+
     # 创建配置文件
     files_to_create = {
         'config/settings/base.py': settings_base,
         'config/settings/local.py': settings_local,
         'config/settings/production.py': settings_production,
+        'config/settings/logging_config.py': logging_config,
         'config/wsgi.py': wsgi_py,
         'config/asgi.py': asgi_py,
         'config/urls.py': urls_py,
@@ -1501,6 +1558,43 @@ def truncate_string(text, length=100, suffix='...'):
     print("4. 创建超级用户: python manage.py createsuperuser")
     print("5. 运行开发服务器: python manage.py runserver")
 
+
+def add_app_logger_config(app_name, project_dir='.'):
+    """为新应用添加日志配置"""
+    logging_config_path = os.path.join(project_dir, 'config', 'settings', 'logging_config.py')
+
+    try:
+        with open(logging_config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # 检查应用日志配置是否已存在
+        if f"'{app_name}': {{" in content:
+            return False
+
+        # 在LOGGING字典的loggers部分末尾添加新配置
+        new_logger = get_app_logger_config(app_name)
+        content = content.replace(
+            '    }\n}',
+            f'{new_logger}\n    }}\n}}'
+        )
+
+        # 创建备份
+        backup_dir = os.path.join(project_dir, 'config', 'app_append_backups', 'logging_backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = os.path.join(backup_dir, f'logging_config.py.{timestamp}.bak')
+
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        # 写入更新后的配置
+        with open(logging_config_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        return True
+    except Exception as e:
+        print(f"! 更新日志配置失败: {str(e)}")
+        return False
 
 def initialize_django_project(project_name):
     """初始化Django项目"""
@@ -2545,6 +2639,142 @@ def filter_new_apps(app_names, base_dir=None):
             new_apps.append(app_name)
     return new_apps, duplicate_apps
 
+def get_logging_config_template():
+   """生成日志配置模板"""
+   return '''# config/settings/logging_config.py
+
+import os
+from datetime import datetime
+
+# 基础日志目录
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
+if not os.path.exists(LOG_DIR):
+   os.makedirs(LOG_DIR)
+
+# 日志文件命名格式
+def get_log_filename(prefix):
+   return os.path.join(LOG_DIR, f'{{prefix}}_{{datetime.now().strftime("%Y%m%d")}}.log')
+
+# Django 日志配置
+LOGGING = {{
+   'version': 1,
+   'disable_existing_loggers': False,
+   # 日志格式定义
+   'formatters': {{
+       # 详细格式，包含时间、日志级别、模块、进程号、线程号和消息
+       'verbose': {{
+           'format': '{{levelname}} {{asctime}} {{module}} {{process:d}} {{thread:d}} {{message}}',
+           'style': '{{',
+       }},
+       # 简单格式，仅包含日志级别和消息
+       'simple': {{
+           'format': '{{levelname}} {{message}}',
+           'style': '{{',
+       }},
+       # 标准格式，包含时间、日志级别、名称、行号和消息
+       'standard': {{
+           'format': '[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s',
+           'datefmt': '%Y-%m-%d %H:%M:%S'
+       }},
+   }},
+   # 日志过滤器定义
+   'filters': {{
+       # 仅在DEBUG=True时允许
+       'require_debug_true': {{
+           '()': 'django.utils.log.RequireDebugTrue',
+       }},
+       # 仅在DEBUG=False时允许
+       'require_debug_false': {{
+           '()': 'django.utils.log.RequireDebugFalse',
+       }},
+   }},
+   # 日志处理器定义
+   'handlers': {{
+       # 控制台输出处理器 - 仅在DEBUG=True时生效
+       'console': {{
+           'level': 'INFO',
+           'filters': ['require_debug_true'],
+           'class': 'logging.StreamHandler',
+           'formatter': 'simple'
+       }},
+       # 管理员邮件通知 - 仅在DEBUG=False时生效，用于生产环境错误通知
+       'mail_admins': {{
+           'level': 'ERROR',
+           'filters': ['require_debug_false'],
+           'class': 'django.utils.log.AdminEmailHandler'
+       }},
+       # 调试级别日志文件 - 5MB大小限制，保留5个备份
+       'file_debug': {{
+           'level': 'DEBUG',
+           'class': 'logging.handlers.RotatingFileHandler',
+           'filename': get_log_filename('debug'),
+           'maxBytes': 1024*1024*5,  # 5 MB
+           'backupCount': 5,
+           'formatter': 'standard',
+       }},
+       # 信息级别日志文件 - 5MB大小限制，保留5个备份
+       'file_info': {{
+           'level': 'INFO',
+           'class': 'logging.handlers.RotatingFileHandler',
+           'filename': get_log_filename('info'),
+           'maxBytes': 1024*1024*5,  # 5 MB
+           'backupCount': 5,
+           'formatter': 'standard',
+       }},
+       # 错误级别日志文件 - 5MB大小限制，保留5个备份
+       'file_error': {{
+           'level': 'ERROR',
+           'class': 'logging.handlers.RotatingFileHandler',
+           'filename': get_log_filename('error'),
+           'maxBytes': 1024*1024*5,  # 5 MB
+           'backupCount': 5,
+           'formatter': 'standard',
+       }},
+   }},
+   # 日志记录器定义
+   'loggers': {{
+       # Django框架相关日志
+       'django': {{
+           'handlers': ['console', 'file_info', 'mail_admins'],
+           'level': 'INFO',
+           'propagate': True,  # 允许日志传播到父记录器
+       }},
+       # Django服务器相关日志
+       'django.server': {{
+           'handlers': ['console', 'file_info'],
+           'level': 'INFO',
+           'propagate': False,  # 不传播日志到父记录器
+       }},
+       # Django请求处理相关日志
+       'django.request': {{
+           'handlers': ['mail_admins', 'file_error'],
+           'level': 'ERROR',
+           'propagate': False,
+       }},
+       # Django数据库操作相关日志
+       'django.db.backends': {{
+           'handlers': ['file_debug'],
+           'level': 'DEBUG' if os.getenv('DEBUG_DB', 'False') == 'True' else 'INFO',
+           'propagate': False,
+       }},
+{app_loggers}
+   }}
+}}'''
+
+def get_app_logger_config(app_name):
+    """生成应用特定的日志配置"""
+    return f'''        # {app_name}应用日志
+        '{app_name}': {{
+            'handlers': ['console', 'file_info', 'file_error'],
+            'level': 'INFO',
+            'propagate': True,
+        }},
+        # {app_name} API日志
+        '{app_name}.api': {{
+            'handlers': ['console', 'file_info', 'file_error'],
+            'level': 'INFO',
+            'propagate': False,
+        }},'''
 
 def main():
     """主函数：处理参数并根据模式执行相应操作"""
@@ -2694,10 +2924,12 @@ def main():
                     print("\n=== 开始自动更新配置 ===")
                     settings_updated = update_base_settings(app_name)
                     urls_updated = update_main_urls(app_name)
+                    logging_updated = add_app_logger_config(app_name)
 
                     print("\n=== 配置更新结果 ===")
                     print(f"INSTALLED_APPS配置: {'✓ 已更新' if settings_updated else '× 更新失败'}")
                     print(f"URL配置: {'✓ 已更新' if urls_updated else '× 更新失败'}")
+                    print(f"日志配置: {'✓ 已更新' if logging_updated else '× 更新失败'}")
 
                     generate_manual_config_guide(app_name, project_name, Path.cwd(), auto_updated=True)
                 else:
