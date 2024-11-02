@@ -18,6 +18,49 @@ INITIAL_APPS = [
     'main',  # 默认主应用，表示系统的主要功能
 ]
 
+# 禁止使用的应用名列表
+FORBIDDEN_APP_NAMES = [
+    'admin',  # Django内置管理后台
+    'auth',  # Django认证系统
+    'contenttypes',  # Django内容类型系统
+    'sessions',  # Django会话系统
+    'messages',  # Django消息系统
+    'staticfiles',  # Django静态文件系统
+    'sites',  # Django站点框架
+]
+
+# 建议的替代名称映射
+APP_NAME_SUGGESTIONS = {
+    'admin': ['management', 'administration', 'backend'],
+    'auth': ['authentication', 'accounts', 'users'],
+    'staticfiles': ['assets', 'resources', 'static_resources'],
+    'messages': ['notifications', 'alerts'],
+}
+
+
+def check_forbidden_app_names(app_names):
+    """
+    检查是否存在禁止使用的应用名
+
+    Args:
+        app_names: 要检查的应用名列表
+
+    Returns:
+        tuple: (是否包含禁用名, 禁用名列表, 建议名称字典)
+    """
+    if app_names is None:
+        return False, [], {}
+
+    forbidden_names = []
+    suggestions = {}
+
+    for app_name in app_names:
+        if app_name in FORBIDDEN_APP_NAMES:
+            forbidden_names.append(app_name)
+            suggestions[app_name] = APP_NAME_SUGGESTIONS.get(app_name, [f'custom_{app_name}'])
+
+    return bool(forbidden_names), forbidden_names, suggestions
+
 # 运行模式
 MODE_INIT = 'init'      # 初始化模式
 MODE_ADD_APP = 'add'    # 增加应用模式
@@ -412,6 +455,193 @@ class Command(BaseCommand):
 ''',
 
         f'static/{app_name}/js/main.js': '''// Application specific JavaScript
+''',
+        'bootstrap.py': f'''"""
+File: apps/{app_name}/bootstrap.py
+Purpose: 应用启动器，用于设置Python导入路径和项目关键常量
+"""
+
+import os
+import sys
+from typing import Tuple, Optional, Set, List
+from pathlib import Path
+
+
+class PathManager:
+    """路径管理器，处理Python导入路径的添加和去重"""
+
+    _instance = None
+    _initialized_paths: Set[str] = set()  # 类变量，跟踪所有已初始化的路径
+
+    def __new__(cls):
+        """确保PathManager为单例"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        """标准化路径格式，确保路径比较的一致性"""
+        return os.path.normpath(os.path.abspath(path))
+
+    def add_paths(self, *paths: str) -> List[str]:
+        """
+        将路径添加到Python导入路径中，确保不重复添加
+
+        Args:
+            *paths: 要添加的路径列表
+
+        Returns:
+            List[str]: 实际添加的路径列表（排除重复的）
+        """
+        # 标准化所有输入路径
+        normalized_paths = {{self._normalize_path(p) for p in paths}}
+
+        # 排除已经初始化过的路径
+        new_paths = normalized_paths - self._initialized_paths
+
+        if not new_paths:
+            return []  # 如果没有新路径需要添加，直接返回
+
+        # 将当前sys.path中的路径标准化用于比较
+        current_sys_paths = {{self._normalize_path(p) for p in sys.path}}
+
+        # 找出需要添加的新路径
+        paths_to_add = new_paths - current_sys_paths
+
+        # 移除可能存在的重复路径（考虑不同形式的相同路径）
+        for path in list(sys.path):
+            norm_path = self._normalize_path(path)
+            if norm_path in new_paths:
+                sys.path.remove(path)
+
+        # 添加新路径到sys.path开头
+        added_paths = []
+        for path in paths_to_add:
+            sys.path.insert(0, path)
+            added_paths.append(path)
+            self._initialized_paths.add(path)  # 记录已初始化的路径
+
+        return added_paths
+
+    def get_current_paths(self) -> Set[str]:
+        """获取当前的Python导入路径集合（标准化后的）"""
+        return {{self._normalize_path(path) for path in sys.path}}
+
+    def get_initialized_paths(self) -> Set[str]:
+        """获取所有已经初始化过的路径"""
+        return self._initialized_paths.copy()
+
+
+def _get_env_path(env_var: str, default: Optional[str] = None) -> Optional[str]:
+    """获取环境变量中定义的路径，如果存在则返回绝对路径"""
+    path = os.getenv(env_var)
+    if path:
+        return os.path.abspath(path)
+    return default
+
+
+def setup_paths() -> Tuple[str, str]:
+    """
+    设置应用级别和项目级别的Python导入路径
+
+    Returns:
+        Tuple[str, str]: (应用根目录路径, 项目根目录路径)
+    """
+    # 首先尝试从环境变量获取路径
+    app_root = _get_env_path('APP_ROOT')
+    project_root = _get_env_path('PROJECT_ROOT')
+
+    if not all([app_root, project_root]):
+        # 获取当前文件所在目录（应用根目录）
+        app_root = os.path.dirname(os.path.abspath(__file__))
+
+        # 获取项目根目录（当前目录往上两级）
+        project_root = os.path.dirname(os.path.dirname(app_root))
+
+    # 实例化路径管理器
+    path_manager = PathManager()
+
+    # 标准化路径
+    app_root = path_manager._normalize_path(app_root)
+    project_root = path_manager._normalize_path(project_root)
+
+    # 验证目录是否存在
+    if not all(os.path.isdir(d) for d in (app_root, project_root)):
+        raise RuntimeError(
+            f"Invalid paths - app_root: {{app_root}}, project_root: {{project_root}}"
+        )
+
+    # 使用PathManager添加路径
+    path_manager.add_paths(project_root, app_root)
+
+    return app_root, project_root
+
+
+# 在模块导入时自动执行路径设置
+APP_ROOT, PROJECT_ROOT = setup_paths()
+
+# 导出项目关键路径常量
+APPS_DIR = os.path.dirname(APP_ROOT)
+CONFIG_DIR = os.path.join(PROJECT_ROOT, 'config')
+LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs')
+MEDIA_DIR = os.path.join(PROJECT_ROOT, 'media')
+STATIC_DIR = os.path.join(PROJECT_ROOT, 'static')
+TEMPLATES_DIR = os.path.join(PROJECT_ROOT, 'templates')
+UPLOADS_DIR = os.path.join(MEDIA_DIR, 'uploads')
+
+# 定义Path对象，方便路径操作
+APP_ROOT_PATH = Path(APP_ROOT)
+PROJECT_ROOT_PATH = Path(PROJECT_ROOT)
+APPS_PATH = Path(APPS_DIR)
+CONFIG_PATH = Path(CONFIG_DIR)
+LOGS_PATH = Path(LOGS_DIR)
+MEDIA_PATH = Path(MEDIA_DIR)
+STATIC_PATH = Path(STATIC_DIR)
+TEMPLATES_PATH = Path(TEMPLATES_DIR)
+UPLOADS_PATH = Path(UPLOADS_DIR)
+
+# 确保关键目录存在
+for directory in (LOGS_DIR, MEDIA_DIR, STATIC_DIR, UPLOADS_DIR):
+    os.makedirs(directory, exist_ok=True)
+
+
+def get_app_name() -> str:
+    """获取当前应用的名称"""
+    return os.path.basename(APP_ROOT)
+
+
+def get_relative_path(path: str) -> str:
+    """获取相对于项目根目录的相对路径"""
+    return os.path.relpath(path, PROJECT_ROOT)
+
+
+def get_python_paths() -> Set[str]:
+    """获取当前的Python路径集合（用于调试）"""
+    path_manager = PathManager()
+    return path_manager.get_current_paths()
+
+
+# 如果这个文件被直接运行，打印路径信息用于调试
+if __name__ == '__main__':
+    path_manager = PathManager()
+
+    print(f"Current Configuration:")
+    print(f"=====================")
+    print(f"Project Root: {{PROJECT_ROOT}}")
+    print(f"Apps Dir: {{APPS_DIR}}")
+    print(f"App Root: {{APP_ROOT}}")
+    print(f"App Name: {{get_app_name()}}")
+
+    print(f"\\nInitialized Paths:")
+    print(f"=================")
+    for path in sorted(path_manager.get_initialized_paths()):
+        print(f"  - {{path}}")
+
+    print(f"\\nPython Path:")
+    print(f"============")
+    for path in sorted(path_manager.get_current_paths()):
+        print(f"  - {{path}}")
 ''',
         'APP_DEVELOPMENT_GUIDE.md': get_app_development_guide(),
     }
@@ -1483,6 +1713,57 @@ def truncate_string(text, length=100, suffix='...'):
     return text[:length].rsplit(' ', 1)[0] + suffix
 '''
 
+    log_utils_content = '''"""
+File: utils/log_utils.py
+Purpose: 项目日志工具函数
+"""
+
+import logging
+from typing import Optional
+
+
+def get_logger(module_name: str, parent_logger: str = 'auto_feature') -> logging.Logger:
+    """获取标准化的logger实例
+
+    Args:
+        module_name: 模块名称，用于日志标识
+        parent_logger: 父logger名称，默认为'auto_feature'
+
+    Returns:
+        logging.Logger: 配置好的logger实例
+
+    Example:
+        # 获取特定模块的logger
+        logger = get_logger('processor.basic')  # 返回 auto_feature.processor.basic logger
+
+        # 获取其他应用的logger
+        logger = get_logger('api.views', 'excel_demo')  # 返回 excel_demo.api.views logger
+    """
+    return logging.getLogger(f'{parent_logger}.{module_name}')
+
+
+def get_app_logger(app_name: str, module_name: Optional[str] = None) -> logging.Logger:
+    """获取应用特定的logger实例
+
+    Args:
+        app_name: 应用名称 (例如 'auto_feature' 或 'excel_demo')
+        module_name: 可选的模块名称
+
+    Returns:
+        logging.Logger: 配置好的logger实例
+
+    Example:
+        # 获取应用特定模块的logger
+        logger = get_app_logger('auto_feature', 'api.views')
+
+        # 获取应用级别的logger
+        logger = get_app_logger('excel_demo')
+    """
+    if module_name:
+        return logging.getLogger(f'{app_name}.{module_name}')
+    return logging.getLogger(app_name)
+'''
+
     app_loggers = '\n'.join(get_app_logger_config(app) for app in INITIAL_APPS)
     logging_config = get_logging_config_template().format(app_loggers=app_loggers)
 
@@ -1505,6 +1786,7 @@ def truncate_string(text, length=100, suffix='...'):
         'docs/api.md': api_md,
         'docs/deployment.md': deployment_md,
         'utils/helpers.py': utils_helpers,
+        'utils/log_utils.py': log_utils_content,
         'templates/base.html': base_html,
         'templates/shared/header.html': shared_header,
         'templates/shared/footer.html': shared_footer,
@@ -2632,12 +2914,17 @@ def filter_new_apps(app_names, base_dir=None):
     """
     new_apps = []
     duplicate_apps = []
+    forbidden_apps = []
+
     for app_name in app_names:
-        if check_app_exists(app_name, base_dir):
+        if app_name in FORBIDDEN_APP_NAMES:
+            forbidden_apps.append(app_name)
+        elif check_app_exists(app_name, base_dir):
             duplicate_apps.append(app_name)
         else:
             new_apps.append(app_name)
-    return new_apps, duplicate_apps
+
+    return new_apps, duplicate_apps, forbidden_apps
 
 def get_logging_config_template():
    """生成日志配置模板"""
@@ -2776,10 +3063,24 @@ def get_app_logger_config(app_name):
             'propagate': False,
         }},'''
 
+
 def main():
     """主函数：处理参数并根据模式执行相应操作"""
     # 解析参数
     args = parse_arguments()
+
+    # 优先检查应用名称是否合法
+    if args.apps:
+        has_forbidden, forbidden_names, suggestions = check_forbidden_app_names(args.apps)
+        if has_forbidden:
+            print("\n× 错误: 检测到使用了禁止的应用名称!")
+            print("\n以下应用名称不能使用，因为它们是Django的内置应用:")
+            for name in forbidden_names:
+                print(f"  - {name}")
+                if name in suggestions:
+                    print(f"    建议使用: {', '.join(suggestions[name])}")
+            print("\n请使用其他名称重新运行命令。")
+            return False
 
     # 优先处理guide参数
     if args.guide:
@@ -2789,9 +3090,10 @@ def main():
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(guide_content)
             print(f"\n✓ 开发指南已生成: {output_path}")
+            return True
         except Exception as e:
             print(f"\n✗ 开发指南生成失败: {str(e)}")
-        return
+            return False
 
     # 优先处理restore参数
     if args.restore:
@@ -2799,7 +3101,7 @@ def main():
         if not check_project_exists(args.project):
             print(f"\n× 错误: 项目 {args.project} 不存在!")
             print("提示: 恢复配置需要在已存在的项目中执行")
-            return
+            return False
 
         # 切换到项目目录
         os.chdir(args.project)
@@ -2813,7 +3115,7 @@ def main():
         print(f"INSTALLED_APPS配置: {'✓ 已恢复' if settings_restored else '× 恢复失败'}")
         print(f"URL配置: {'✓ 已恢复' if urls_restored else '× 恢复失败'}")
         print("\n=== 配置恢复执行完成 ===")
-        return
+        return settings_restored and urls_restored
 
     # 以下是原有的初始化和添加应用的逻辑
     project_name = args.project
@@ -2826,7 +3128,7 @@ def main():
         if project_exists:
             print(f"\n× 错误: 项目 {project_name} 已存在!")
             print("提示: 如果要在现有项目中添加应用，请使用 --mode add")
-            return
+            return False
 
         # 确定应用列表
         if args.apps is not None:
@@ -2835,14 +3137,22 @@ def main():
         # 创建项目目录结构
         create_project_structure(project_name)
 
-        # 检测重复应用
-        new_apps, duplicate_apps = filter_new_apps(INITIAL_APPS)
+        new_apps, duplicate_apps, forbidden_apps = filter_new_apps(INITIAL_APPS)
+
+        if forbidden_apps:
+            print("\n× 错误: 以下应用名称是Django内置应用，不能使用:")
+            for name in forbidden_apps:
+                print(f"  - {name}")
+                if name in APP_NAME_SUGGESTIONS:
+                    print(f"    建议使用: {', '.join(APP_NAME_SUGGESTIONS[name])}")
+            print("\n请使用其他名称重新运行命令。")
+            return False
 
         if not new_apps:
             print("\n! 注意: 所有指定的应用都已存在，跳过处理")
             if duplicate_apps:
                 print("  重复的应用:", ", ".join(duplicate_apps))
-            return
+            return False
 
         # 更新INITIAL_APPS为新应用列表
         INITIAL_APPS = new_apps
@@ -2858,7 +3168,8 @@ def main():
         print("(使用默认配置)" if args.mode == MODE_INIT and args.project is None and args.apps is None else "")
 
         # 初始化项目
-        initialize_django_project(project_name)
+        success = initialize_django_project(project_name)
+        return success
 
     elif args.mode == MODE_ADD_APP:
         if not project_exists:
@@ -2868,15 +3179,23 @@ def main():
             # 创建项目目录结构
             create_project_structure(project_name)
 
+            # 检测重复应用和禁止应用
+            new_apps, duplicate_apps, forbidden_apps = filter_new_apps(INITIAL_APPS)
 
-            # 检测重复应用
-            new_apps, duplicate_apps = filter_new_apps(INITIAL_APPS)
+            if forbidden_apps:
+                print("\n× 错误: 以下应用名称是Django内置应用，不能使用:")
+                for name in forbidden_apps:
+                    print(f"  - {name}")
+                    if name in APP_NAME_SUGGESTIONS:
+                        print(f"    建议使用: {', '.join(APP_NAME_SUGGESTIONS[name])}")
+                print("\n请使用其他名称重新运行命令。")
+                return False
 
             if not new_apps:
                 print("\n! 注意: 所有指定的应用都已存在，跳过处理")
                 if duplicate_apps:
                     print("  重复的应用:", ", ".join(duplicate_apps))
-                return
+                return False
 
             # 更新INITIAL_APPS为新应用列表
             INITIAL_APPS = new_apps
@@ -2886,11 +3205,12 @@ def main():
                 print("\n! 以下应用已存在，将跳过处理:")
                 print("  ", ", ".join(duplicate_apps))
 
-            initialize_django_project(project_name)
+            success = initialize_django_project(project_name)
+            return success
         else:
             if not args.apps:
                 print("\n× 错误: 添加应用模式需要指定至少一个应用名称")
-                return
+                return False
 
             # 切换到项目目录
             os.chdir(project_name)
@@ -2899,25 +3219,30 @@ def main():
             apps_dir = Path.cwd() / 'apps'
             if not apps_dir.exists():
                 print("\n× 错误: apps目录不存在，请检查项目结构")
-                return
+                return False
 
             # 检测重复应用
-            new_apps, duplicate_apps = filter_new_apps(args.apps)
+            new_apps, duplicate_apps, forbidden_apps = filter_new_apps(args.apps)
 
             if not new_apps:
                 print("\n! 注意: 所有指定的应用都已存在，跳过处理")
                 if duplicate_apps:
                     print("  重复的应用:", ", ".join(duplicate_apps))
-                return
+                return False
 
             # 显示重复应用信息
             if duplicate_apps:
                 print("\n! 以下应用已存在，将跳过处理:")
                 print("  ", ", ".join(duplicate_apps))
 
+            success = True
             # 创建新应用
             for app_name in new_apps:
-                create_app_structure(app_name, project_name, Path.cwd())
+                app_success = create_app_structure(app_name, project_name, Path.cwd())
+                if not app_success:
+                    success = False
+                    continue
+
                 print(f"\n√ 应用 {app_name} 创建成功!")
 
                 if args.auto_update:
@@ -2925,6 +3250,9 @@ def main():
                     settings_updated = update_base_settings(app_name)
                     urls_updated = update_main_urls(app_name)
                     logging_updated = add_app_logger_config(app_name)
+
+                    if not (settings_updated and urls_updated and logging_updated):
+                        success = False
 
                     print("\n=== 配置更新结果 ===")
                     print(f"INSTALLED_APPS配置: {'✓ 已更新' if settings_updated else '× 更新失败'}")
@@ -2935,6 +3263,9 @@ def main():
                 else:
                     generate_manual_config_guide(app_name, project_name, Path.cwd(), auto_updated=False)
 
+            return success
+
+    return True
 
 
 def execute_django_commands():
@@ -2994,9 +3325,10 @@ def execute_django_commands():
 
 if __name__ == '__main__':
     print("\n=== 开始执行项目初始化 ===")
-    main()
-    # 只有在非恢复模式下才执行Django命令
-    if not any(arg in sys.argv for arg in ['--restore']):
+    # 执行主程序，并获取执行结果
+    success = main()
+    # 只有在非恢复模式且主程序执行成功的情况下才执行Django命令
+    if success and not any(arg in sys.argv for arg in ['--restore']):
         print("\n=== 项目初始化完成，准备执行Django命令 ===")
         execute_django_commands()
     print("\n=== 所有操作执行完成 ===")

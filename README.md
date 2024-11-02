@@ -35,6 +35,19 @@ curl -O https://raw.githubusercontent.com/your-username/django-project-init/main
 chmod +x django_project_init.py
 ```
 
+## 应用命名限制
+
+⚠️ 由于与Django内置应用的命名冲突问题，以下名称不能用于创建新应用：
+
+- `admin`（建议使用 `management` 或 `administration` 代替）
+- `auth`（建议使用 `authentication` 或 `accounts` 代替）
+- `contenttypes`
+- `sessions`
+- `messages`
+- `staticfiles`（建议使用 `assets` 或 `resources` 代替）
+
+如果尝试使用这些名称，脚本会提供错误提示并建议替代名称。
+
 ## 快速开始
 
 ### 创建新项目
@@ -49,21 +62,21 @@ python django_project_init.py
 python django_project_init.py -p myproject
 ```
 
-3. 创建项目并指定应用：
+3. 创建项目并指定应用（注意避免使用受限名称）：
 ```bash
-python django_project_init.py -p myproject -a user blog admin
+python django_project_init.py -p myproject -a accounts dashboard
 ```
 
 ### 在现有项目中添加应用
 
 1. 手动配置模式：
 ```bash
-python django_project_init.py --mode add -p myproject -a newapp
+python django_project_init.py --mode add -p myproject -a customer_service
 ```
 
 2. 自动配置模式：
 ```bash
-python django_project_init.py --mode add -p myproject -a newapp --auto-update
+python django_project_init.py --mode add -p myproject -a accounts --auto-update
 ```
 
 ### 导出开发指南
@@ -133,6 +146,7 @@ app_name/
 │   ├── models/        # 核心数据模型（非ORM）
 │   ├── utils/         # 核心工具函数
 │   └── exceptions/    # 核心异常定义
+├── bootstrap.py       # [新增] 应用启动器
 ├── templates/           # 应用模板
 │   └── app_name/       # 应用特定模板
 │       └── components/ # 组件模板
@@ -165,6 +179,37 @@ app_name/
 ├── constants.py   # 常量定义
 ├── exceptions.py  # Django相关异常
 └── utils.py      # Django相关工具函数
+```
+
+### bootstrap.py 说明
+
+新增的 bootstrap.py 文件是一个应用启动器，主要负责：
+
+1. 设置 Python 导入路径
+2. 管理项目关键路径常量
+3. 提供路径管理工具类
+
+主要功能：
+- 自动添加项目根目录到 Python 路径
+- 管理所有项目相关目录路径
+- 提供路径标准化和验证功能
+- 支持开发环境路径调试
+
+使用示例：
+```python
+from apps.myapp.bootstrap import (
+    PROJECT_ROOT,
+    APP_ROOT,
+    STATIC_PATH,
+    MEDIA_PATH,
+    get_app_name,
+)
+
+# 获取当前应用名称
+app_name = get_app_name()
+
+# 使用项目路径
+static_file = STATIC_PATH / 'css' / 'style.css'
 ```
 
 ## 详细使用说明
