@@ -194,6 +194,10 @@ def create_app_structure(app_name, project_name, base_dir):
     directories = [
         'migrations',  # [Django必需] 数据库迁移文件目录
         'core',  # [自定义] 核心业务逻辑目录 - 存放所有与Django无关的业务逻辑、算法、数据处理等代码
+        # MVF目录 - 每个都有自己的__init__.py
+        'models',  # 存放所有模型定义文件
+        'views',  # 存放所有视图处理文件
+        'forms',  # 存放所有表单定义文件
         f'templates/{app_name}',  # [Django] 应用级HTML模板目录
         f'templates/{app_name}/components',  # [Django] 可重用的模板组件目录
         f'static/{app_name}/css',  # [Django] CSS样式文件目录
@@ -222,6 +226,142 @@ def create_app_structure(app_name, project_name, base_dir):
                                f'"""\nFile: apps/{app_name}/{directory}/__init__.py\nPurpose: {directory}包的初始化文件\n"""\n'):
                 success = False
 
+    # 添加MVF目录的示例文件
+    mvf_examples = {
+        'models/base.py': f'''"""
+File: apps/{app_name}/models/base.py
+Purpose: 基础数据模型定义
+"""
+
+from django.db import models
+
+class BaseModel(models.Model):
+    """所有模型的基类"""
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        abstract = True
+''',
+
+        'views/base.py': f'''"""
+File: apps/{app_name}/views/base.py
+Purpose: 基础视图定义
+"""
+
+from django.shortcuts import render
+from django.views import View
+
+class BaseView(View):
+    """基础视图类"""
+    template_name = None
+
+    def get_context_data(self, **kwargs):
+        context = {{
+            'title': '{app_name.title()}',
+            'project_name': '{project_name}'
+        }}
+        context.update(kwargs)
+        return context
+''',
+
+        'forms/base.py': f'''"""
+File: apps/{app_name}/forms/base.py
+Purpose: 基础表单定义
+"""
+
+from django import forms
+
+class BaseForm(forms.Form):
+    """基础表单类"""
+    def clean(self):
+        cleaned_data = super().clean()
+        return cleaned_data
+'''
+    }
+    # 创建MVF示例文件
+    for file_path, content in mvf_examples.items():
+        if not create_file(app_dir / file_path, content):
+            success = False
+
+    # 添加init文件
+    mvf_examples.update({
+        'models/__init__.py': f'''"""
+File: apps/{app_name}/models/__init__.py
+Purpose: 汇总导出所有模型
+"""
+from .base import BaseModel
+''',
+
+        'views/__init__.py': f'''"""
+File: apps/{app_name}/views/__init__.py
+Purpose: 汇总导出所有视图
+"""
+from .base import BaseView
+''',
+
+        'forms/__init__.py': f'''"""
+File: apps/{app_name}/forms/__init__.py
+Purpose: 汇总导出所有表单
+"""
+from .base import BaseForm
+'''
+    })
+
+    # 举个实际模块的例子
+    if app_name == 'data_processor':  # 假设这是数据处理应用
+        mvf_examples.update({
+            'models/excel_data.py': f'''"""
+File: apps/{app_name}/models/excel_data.py
+Purpose: Excel数据模型定义
+"""
+
+from .base import BaseModel
+
+class ExcelData(BaseModel):
+    """Excel数据模型"""
+    file_name = models.CharField(max_length=255, verbose_name='文件名')
+    sheet_name = models.CharField(max_length=100, verbose_name='工作表名')
+    row_count = models.IntegerField(verbose_name='行数')
+    # 其他字段...
+''',
+
+            'views/excel_processor.py': f'''"""
+File: apps/{app_name}/views/excel_processor.py
+Purpose: Excel处理视图
+"""
+
+from .base import BaseView
+from ..services.excel_service import ExcelService
+
+class ExcelUploadView(BaseView):
+    template_name = '{app_name}/excel_upload.html'
+
+    def post(self, request):
+        service = ExcelService()
+        result = service.process_upload(request.FILES['file'])
+        return JsonResponse(result)
+''',
+
+            'forms/excel_upload.py': f'''"""
+File: apps/{app_name}/forms/excel_upload.py
+Purpose: Excel上传表单
+"""
+
+from .base import BaseForm
+
+class ExcelUploadForm(BaseForm):
+    file = forms.FileField(label='Excel文件')
+    sheet_name = forms.CharField(label='工作表名', required=False)
+
+    def clean_file(self):
+        file = self.cleaned_data['file']
+        if not file.name.endswith(('.xlsx', '.xls')):
+            raise forms.ValidationError('请上传Excel文件')
+        return file
+'''
+        })
+
     # 创建应用基础文件
     files = {
         '__init__.py': f'"""\nFile: apps/{app_name}/__init__.py\nPurpose: {app_name}应用的初始化文件\n"""\n',
@@ -240,44 +380,18 @@ class {app_name.title()}Config(AppConfig):
     verbose_name = '{app_name.title()}模块'
 ''',
 
-        'models.py': f'''"""
-File: apps/{app_name}/models.py
-Purpose: {app_name}应用的数据模型定义
-"""
-
-from django.db import models
-
-# Create your models here.
-''',
-
-        'views.py': f'''"""
-File: apps/{app_name}/views.py
-Purpose: {app_name}应用的视图处理函数
-"""
-
-from django.shortcuts import render
-
-def index(request):
-    """主页视图"""
-    context = {{
-        'title': '{"欢迎访问"+project_name if app_name == "main" else app_name.title()+"模块"}',
-        'project_name': '{project_name}'
-    }}
-    return render(request, '{app_name}/index.html', context)  # 移除重复的app_name
-''',
-
         'urls.py': f'''"""
 File: apps/{app_name}/urls.py
 Purpose: {app_name}应用的URL配置
 """
 
 from django.urls import path
-from . import views
+from .views.base import BaseView
 
 app_name = '{app_name}'
 
 urlpatterns = [
-    path('', views.index, name='index'),
+    path('', BaseView.as_view(), name='index'),
 ]
 ''',
 
@@ -288,16 +402,6 @@ Purpose: {app_name}应用的后台管理配置
 
 from django.contrib import admin
 # Register your models here.
-''',
-
-        'forms.py': f'''"""
-File: apps/{app_name}/forms.py
-Purpose: {app_name}应用的表单定义
-"""
-
-from django import forms
-
-# Create your forms here.
 ''',
 
         'constants.py': f'''"""
@@ -431,7 +535,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('命令执行成功'))
 ''',
 
-        f'templates/{app_name}/base.html': f'''{{% extends "base.html" %}}
+        f'templates/{app_name}/base.html': f'''{{% extends "../base.html" %}}
 
 {{% block title %}}{app_name.title()} - {{{{project_name}}}}{{% endblock %}}
 
@@ -652,6 +756,7 @@ if __name__ == '__main__':
     for file_path, content in files.items():
         if not create_file(app_dir / file_path, content):
             success = False
+
 
     return success
 
@@ -1412,7 +1517,11 @@ python manage.py runserver
 ├── templates/        # 项目级模板
 ├── static/           # 静态文件
 ├── media/            # 上传文件
-├── docs/             # 文档
+├── docs/            # 文档
+│   ├── api.md                  # API接口文档
+│   ├── deployment.md           # 部署文档
+│   ├── api_design_guide.md     # API设计指南(精简版)
+│   └── django_rest_api_lightweight_specification_and_implementation_guide.md # API设计指南(完整版)
 └── requirements/     # 依赖管理
 ```
 
@@ -1789,6 +1898,8 @@ def get_app_logger(app_name: str, module_name: Optional[str] = None) -> logging.
         'README.md': readme,
         'docs/api.md': api_md,
         'docs/deployment.md': deployment_md,
+        'docs/api_design_guide.md': get_api_design_guide_simple(),  # 添加精简版指南
+        'docs/django_rest_api_lightweight_specification_and_implementation_guide.md': get_django_rest_api_lightweight_specification_and_implementation_guide(),  # 添加完整版指南
         'common/helpers.py': common_helpers,
         'common/log_utils.py': common_utils_content,
         'templates/base.html': base_html,
@@ -3067,6 +3178,286 @@ def get_app_logger_config(app_name):
             'propagate': False,
         }},'''
 
+
+def get_django_rest_api_lightweight_specification_and_implementation_guide():
+    """获取完整版API设计指南"""
+    return '''# Django RESTful API 轻量级设计规范与实现指南
+
+## 适用场景
+
+### 适用于
+- 小型企业内部应用系统
+- 已有Python程序的API化改造
+- 快速开发和部署需求
+- 用户量级在百级以下
+- 并发要求不高（10次/秒以下）
+- 基础的认证和权限需求
+- 单团队开发（5人以下）
+
+### 不适用于
+- 高并发系统（100次/秒以上）
+- 大型企业多团队协作
+- 复杂的权限管理需求
+- 需要严格的安全审计
+- 需要细粒度访问控制
+- 需要复杂的数据处理流程
+- 需要版本控制和向下兼容
+
+## 设计原则
+
+### 核心原则
+1. **简单性**：优先采用最简单的解决方案
+2. **实用性**：只实现必要的功能，避免过度设计
+3. **可维护性**：清晰的结构和注释
+4. **快速响应**：减少开发时间和响应时间
+
+### 技术选择
+1. Django + Django REST Framework（DRF）
+2. 基础的Token认证
+3. 简单的权限控制
+4. 标准JSON响应
+5. SQLite/MySQL数据库（根据需求选择）
+
+### 功能边界
+1. 基础的CRUD操作
+2. 简单的认证机制
+3. 基本的错误处理
+4. 必要的数据验证
+5. 基础的文档支持
+
+### 明确不做
+1. 复杂的缓存策略
+2. 细粒度的权限控制
+3. API版本控制
+4. 复杂的数据转换
+5. 高级的性能优化
+
+## 目录结构与文件清单
+
+### 标准目录结构
+```
+your_app/
+├── models/
+│   └── task.py                # 1. 数据模型定义
+├── serializers/
+│   └── task_serializer.py     # 2. 序列化器
+├── validators/
+│   └── task_validator.py      # 3. 数据验证器
+├── views/
+│   └── task_view.py          # 4. API视图
+├── urls.py                    # 5. URL配置
+└── tests/
+    └── test_task_api.py      # 6. 基础测试
+```
+
+## 文件实现要求
+
+### models/task.py
+```python
+class Task(models.Model):
+    # 基础字段
+    name = models.CharField(max_length=100)
+    status = models.CharField(max_length=20)
+    data = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+```
+
+### serializers/task_serializer.py
+```python
+class TaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Task
+        fields = '__all__'
+```
+
+### validators/task_validator.py
+```python
+def validate_task_data(data):
+    if not data:
+        raise ValidationError("数据不能为空")
+    return data
+```
+
+### views/task_view.py
+```python
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+```
+
+### urls.py
+```python
+router = DefaultRouter()
+router.register('tasks', TaskViewSet)
+urlpatterns = router.urls
+```
+
+## 标准API响应格式
+
+### 成功响应
+```json
+{
+    "success": true,
+    "data": {
+        // 实际数据
+    },
+    "message": "操作成功"
+}
+```
+
+### 错误响应
+```json
+{
+    "success": false,
+    "error": {
+        "code": "ERROR_CODE",
+        "message": "错误描述"
+    }
+}
+```
+
+## 开发顺序建议
+
+1. 首先实现模型（models/task.py）
+2. 然后是序列化器（serializers/task_serializer.py）
+3. 接着是验证器（validators/task_validator.py）
+4. 然后是视图（views/task_view.py）
+5. 配置URL（urls.py）
+6. 最后编写测试（tests/test_task_api.py）
+
+## 注意事项
+
+### 开发规范
+1. 遵循PEP 8编码规范
+2. 添加必要的代码注释
+3. 使用有意义的变量名和函数名
+4. 保持代码简洁明了
+
+### 文档要求
+1. 基础的API接口文档
+2. 必要的代码注释
+3. 简单的使用说明
+4. README文件
+
+### 测试要求
+1. 基本的单元测试
+2. 主要功能的集成测试
+3. 关键流程的测试用例
+
+### 部署建议
+1. 使用简单的部署方式
+2. 基础的日志记录
+3. 简单的错误监控
+4. 必要的备份策略
+
+## 后续扩展建议
+
+如果未来需要扩展，建议按以下优先级：
+
+1. 添加缓存支持
+2. 增加更多的安全措施
+3. 实现API版本控制
+4. 添加更多的监控手段
+5. 优化性能和并发
+
+## 结语
+
+本规范面向快速开发和部署，适合小型企业内部应用。如果项目规模扩大或需求变复杂，建议参考更完整的企业级API设计方案。在实际开发中，可以根据具体需求适当调整规范内容，但建议不要过度扩展，保持简单实用的原则。
+'''
+
+
+def get_api_design_guide_simple():
+    """获取精简版API设计指南"""
+    return '''# Django RESTful API 轻量级设计规范
+
+## 1. 设计原则
+- 简单性：优先采用最简单的解决方案
+- 实用性：只实现必要的功能
+- 可维护性：清晰的结构和文档
+- 快速响应：减少开发和响应时间
+
+## 2. 标准目录结构
+```
+your_app/
+├── models/      # 数据模型
+├── serializers/ # 序列化器
+├── validators/  # 数据验证
+├── views/      # API视图
+├── urls.py     # URL配置
+└── tests/      # 测试代码
+```
+
+## 3. 标准响应格式
+### 成功响应
+```json
+{
+    "success": true,
+    "data": {
+        // 实际数据
+    },
+    "message": "操作成功"
+}
+```
+
+### 错误响应
+```json
+{
+    "success": false,
+    "error": {
+        "code": "ERROR_CODE",
+        "message": "错误描述"
+    }
+}
+```
+
+## 4. 开发顺序建议
+1. 首先实现模型（models/task.py）
+2. 然后是序列化器（serializers/task_serializer.py）
+3. 接着是验证器（validators/task_validator.py）
+4. 然后是视图（views/task_view.py）
+5. 配置URL（urls.py）
+6. 最后编写测试（tests/test_task_api.py）
+
+## 5. 注意事项
+
+### 开发规范
+1. 遵循PEP 8编码规范
+2. 添加必要的代码注释
+3. 使用有意义的变量名和函数名
+4. 保持代码简洁明了
+
+### 文档要求
+1. 基础的API接口文档
+2. 必要的代码注释
+3. 简单的使用说明
+4. README文件
+
+### 测试要求
+1. 基本的单元测试
+2. 主要功能的集成测试
+3. 关键流程的测试用例
+
+### 部署建议
+1. 使用简单的部署方式
+2. 基础的日志记录
+3. 简单的错误监控
+4. 必要的备份策略
+
+## 6. 后续扩展建议
+如果未来需要扩展，建议按以下优先级：
+1. 添加缓存支持
+2. 增加更多的安全措施
+3. 实现API版本控制
+4. 添加更多的监控手段
+5. 优化性能和并发
+
+注：本文档为精简版，完整版请参考 django_rest_api_lightweight_specification_and_implementation_guide.md
+'''
 
 def main():
     """主函数：处理参数并根据模式执行相应操作"""
