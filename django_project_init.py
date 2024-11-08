@@ -3183,6 +3183,43 @@ def get_django_rest_api_lightweight_specification_and_implementation_guide():
     """获取完整版API设计指南"""
     return '''# Django RESTful API 轻量级设计规范与实现指南
 
+## 文档主要用途
+
+### 1. Python程序的API化改造
+适用于将已有的Python程序（如数据处理、业务逻辑处理程序等）改造为Web API的场景。本文档提供：
+- 标准的改造方法
+- 代码组织结构
+- 数据接口规范
+- 开发流程指导
+
+#### 典型案例
+- 将数据分析脚本转化为API服务
+- 将业务处理程序封装为Web接口
+- 将已有功能模块改造为微服务
+
+### 2. 小型内部系统API开发
+适用于开发企业内部使用的小型业务系统API。本文档提供：
+- 完整的项目结构
+- 基础的认证授权
+- 统一的接口规范
+- 环境配置方案
+
+#### 典型案例
+- 部门级业务系统开发
+- 内部工具平台开发
+- 轻量级数据服务开发
+
+### 3. 使用说明
+1. 对于API化改造项目：
+   - 主要关注models和serializers的实现
+   - 重点在于如何封装已有业务逻辑
+   - 特别注意数据验证和错误处理
+
+2. 对于新系统开发：
+   - 可以直接使用完整的项目结构
+   - 按照开发顺序建议进行实现
+   - 根据实际需求调整配置
+
 ## 适用场景
 
 ### 适用于
@@ -3236,64 +3273,301 @@ def get_django_rest_api_lightweight_specification_and_implementation_guide():
 
 ### 标准目录结构
 ```
-your_app/
-├── models/
-│   └── task.py                # 1. 数据模型定义
-├── serializers/
-│   └── task_serializer.py     # 2. 序列化器
-├── validators/
-│   └── task_validator.py      # 3. 数据验证器
-├── views/
-│   └── task_view.py          # 4. API视图
-├── urls.py                    # 5. URL配置
-└── tests/
-    └── test_task_api.py      # 6. 基础测试
+project_root/                  # 项目根目录
+├── manage.py
+├── config/                    # 配置目录
+│   ├── __init__.py
+│   ├── asgi.py               # ASGI配置
+│   ├── wsgi.py               # WSGI配置
+│   ├── urls.py               # 主URL配置
+│   └── settings/             # 分离的设置文件
+│       ├── __init__.py
+│       ├── base.py           # 基础设置
+│       ├── local.py          # 本地开发设置
+│       ├── production.py     # 生产环境设置
+│       └── logging_config.py # 日志配置
+└── yourapp/                  # 应用目录
+    ├── __init__.py
+    ├── models/              # 模型目录
+    │   ├── __init__.py
+    │   └── task.py         # 数据模型定义
+    ├── serializers/        # 序列化器目录
+    │   ├── __init__.py
+    │   └── task.py        # 序列化器（包含验证逻辑）
+    ├── views/             # 视图目录
+    │   ├── __init__.py
+    │   └── task.py       # API视图
+    ├── urls.py           # 应用URL配置
+    └── tests/           # 测试目录
+        ├── __init__.py
+        └── test_task_api.py  # API测试
 ```
 
-## 文件实现要求
+## 文件实现示例
 
-### models/task.py
+### config/settings/base.py（基础设置）
 ```python
+from pathlib import Path
+
+# 构建路径
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# 基础应用列表
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    # Third party apps
+    'rest_framework',
+    'rest_framework.authtoken',
+    # Local apps
+    'yourapp',
+]
+
+# REST Framework 设置
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}
+
+# 其他基础设置...
+```
+
+### config/settings/local.py（本地开发设置）
+```python
+from .base import *
+
+# 开发环境特定设置
+DEBUG = True
+
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# 数据库设置
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+# 开发环境额外的应用
+INSTALLED_APPS += [
+    'django_extensions',  # 可选的开发工具
+]
+
+# 开发环境的DRF额外设置
+REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] += [
+    'rest_framework.renderers.BrowsableAPIRenderer',  # 开发环境启用可浏览API
+]
+```
+
+### config/settings/production.py（生产环境设置）
+```python
+from .base import *
+
+DEBUG = False
+
+ALLOWED_HOSTS = ['your-domain.com']  # 实际部署的域名
+
+# 生产环境数据库设置
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'your_db_name',
+        'USER': 'your_db_user',
+        'PASSWORD': 'your_db_password',
+        'HOST': 'localhost',
+        'PORT': '3306',
+    }
+}
+
+# 生产环境安全设置
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+```
+
+### config/settings/logging_config.py（日志配置）
+```python
+import os
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# 日志配置
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'django.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'yourapp': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
+```
+
+### config/urls.py（主URL配置）
+```python
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/v1/', include('yourapp.urls')),
+]
+```
+
+### yourapp/models/task.py
+```python
+from django.db import models
+
 class Task(models.Model):
-    # 基础字段
     name = models.CharField(max_length=100)
-    status = models.CharField(max_length=20)
-    data = models.JSONField()
+    description = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', '待处理'),
+            ('in_progress', '处理中'),
+            ('completed', '已完成'),
+        ],
+        default='pending'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
 ```
 
-### serializers/task_serializer.py
+### yourapp/serializers/task.py
 ```python
+from rest_framework import serializers
+from ..models.task import Task
+
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
-        fields = '__all__'
+        fields = ['id', 'name', 'description', 'status', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def validate_name(self, value):
+        """名称字段的验证"""
+        if len(value.strip()) < 3:
+            raise serializers.ValidationError("任务名称至少需要3个字符")
+        return value.strip()
+
+    def validate_status(self, value):
+        """状态字段的验证"""
+        valid_statuses = ['pending', 'in_progress', 'completed']
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"状态必须是以下之一: {', '.join(valid_statuses)}")
+        return value
+
+    def validate(self, data):
+        """整体数据的验证"""
+        if 'status' in data and data['status'] == 'completed':
+            if not data.get('description'):
+                raise serializers.ValidationError({"description": "完成的任务必须包含描述"})
+        return data
 ```
 
-### validators/task_validator.py
+### yourapp/views/task.py
 ```python
-def validate_task_data(data):
-    if not data:
-        raise ValidationError("数据不能为空")
-    return data
-```
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from ..models.task import Task
+from ..serializers.task import TaskSerializer
 
-### views/task_view.py
-```python
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(self.format_response(serializer.data))
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(self.format_response(serializer.data))
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(
+            self.format_response(serializer.data),
+            status=status.HTTP_201_CREATED
+        )
+
+    @staticmethod
+    def format_response(data):
+        """格式化响应数据"""
+        return {
+            'success': True,
+            'data': data,
+            'message': '操作成功'
+        }
 ```
 
-### urls.py
+### yourapp/urls.py
 ```python
+from rest_framework.routers import DefaultRouter
+from .views.task import TaskViewSet
+
 router = DefaultRouter()
 router.register('tasks', TaskViewSet)
+
 urlpatterns = router.urls
 ```
 
@@ -3324,11 +3598,10 @@ urlpatterns = router.urls
 ## 开发顺序建议
 
 1. 首先实现模型（models/task.py）
-2. 然后是序列化器（serializers/task_serializer.py）
-3. 接着是验证器（validators/task_validator.py）
-4. 然后是视图（views/task_view.py）
-5. 配置URL（urls.py）
-6. 最后编写测试（tests/test_task_api.py）
+2. 然后是序列化器（serializers/task.py）
+3. 接着是视图（views/task.py）
+4. 配置URL（urls.py）
+5. 最后编写测试（tests/test_task_api.py）
 
 ## 注意事项
 
@@ -3368,8 +3641,15 @@ urlpatterns = router.urls
 ## 结语
 
 本规范面向快速开发和部署，适合小型企业内部应用。如果项目规模扩大或需求变复杂，建议参考更完整的企业级API设计方案。在实际开发中，可以根据具体需求适当调整规范内容，但建议不要过度扩展，保持简单实用的原则。
-'''
 
+## 环境配置说明
+
+在使用分离的设置文件时，需要通过环境变量`DJANGO_SETTINGS_MODULE`来指定使用哪个设置文件，例如：
+
+- 本地开发：`export DJANGO_SETTINGS_MODULE=config.settings.local`
+- 生产环境：`export DJANGO_SETTINGS_MODULE=config.settings.production`
+
+这样可以确保在不同环境中使用正确的配置。'''
 
 def get_api_design_guide_simple():
     """获取精简版API设计指南"""
