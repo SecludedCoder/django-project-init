@@ -197,6 +197,7 @@ def create_app_structure(app_name, project_name, base_dir):
         # MVF目录 - 每个都有自己的__init__.py
         'models',  # 存放所有模型定义文件
         'views',  # 存放所有视图处理文件
+        'serializers',  # 存放所有序列化器文件
         'forms',  # 存放所有表单定义文件
         f'templates/{app_name}',  # [Django] 应用级HTML模板目录
         f'templates/{app_name}/components',  # [Django] 可重用的模板组件目录
@@ -263,6 +264,24 @@ class BaseView(View):
         }}
         context.update(kwargs)
         return context
+''',
+        'serializers/base.py': f'''"""
+File: apps/{app_name}/serializers/base.py
+Purpose: 基础序列化器定义
+"""
+
+from rest_framework import serializers
+
+class BaseModelSerializer(serializers.ModelSerializer):
+    """基础模型序列化器"""
+
+    class Meta:
+        abstract = True
+        read_only_fields = ['created_at', 'updated_at']
+
+    def validate(self, attrs):
+        """通用验证钩子"""
+        return super().validate(attrs)
 ''',
 
         'forms/base.py': f'''"""
@@ -446,15 +465,15 @@ Purpose: {app_name}应用的格式化助手函数
 # Formatting helper functions
 ''',
 
-        'api/serializers.py': f'''"""
-File: apps/{app_name}/api/serializers.py
-Purpose: {app_name}应用的API序列化器
-"""
-
-from rest_framework import serializers
-
-# API Serializers
-''',
+#         'api/serializers.py': f'''"""
+# File: apps/{app_name}/api/serializers.py
+# Purpose: {app_name}应用的API序列化器
+# """
+#
+# from rest_framework import serializers
+#
+# # API Serializers
+# ''',
 
         'api/views.py': f'''"""
 File: apps/{app_name}/api/views.py
@@ -3292,21 +3311,22 @@ project_root/                  # 项目根目录
 │       ├── local.py          # 本地开发设置
 │       ├── production.py     # 生产环境设置
 │       └── logging_config.py # 日志配置
-└── yourapp/                  # 应用目录
-    ├── __init__.py
-    ├── models/              # 模型目录
-    │   ├── __init__.py
-    │   └── task.py         # 数据模型定义
-    ├── serializers/        # 序列化器目录
-    │   ├── __init__.py
-    │   └── task.py        # 序列化器（包含验证逻辑）
-    ├── views/             # 视图目录
-    │   ├── __init__.py
-    │   └── task.py       # API视图
-    ├── urls.py           # 应用URL配置
-    └── tests/           # 测试目录
+└── apps/                    # 应用目录
+    └── yourapp/                  # 应用目录
         ├── __init__.py
-        └── test_task_api.py  # API测试
+        ├── models/              # 模型目录
+        │   ├── __init__.py
+        │   └── task.py         # 数据模型定义
+        ├── serializers/        # 序列化器目录
+        │   ├── __init__.py
+        │   └── task.py        # 序列化器（包含验证逻辑）
+        ├── views/             # 视图目录
+        │   ├── __init__.py
+        │   └── task.py       # API视图
+        ├── urls.py           # 应用URL配置
+        └── tests/           # 测试目录
+            ├── __init__.py
+            └── test_task_api.py  # API测试
 ```
 
 ## 文件实现示例
@@ -3471,7 +3491,7 @@ urlpatterns = [
 ]
 ```
 
-### yourapp/models/task.py
+### apps/yourapp/models/task.py
 ```python
 from django.db import models
 
@@ -3494,10 +3514,10 @@ class Task(models.Model):
         ordering = ['-created_at']
 ```
 
-### yourapp/serializers/task.py
+### apps/yourapp/serializers/task.py
 ```python
 from rest_framework import serializers
-from ..models.task import Task
+from apps.yourapp.models.task import Task
 
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
@@ -3526,11 +3546,11 @@ class TaskSerializer(serializers.ModelSerializer):
         return data
 ```
 
-### yourapp/views/task.py
+### apps/yourapp/views/task.py
 ```python
 from rest_framework import viewsets, status
 from rest_framework.response import Response
-from ..models.task import Task
+from apps.yourapp.models.task import Task
 from ..serializers.task import TaskSerializer
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -3566,7 +3586,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         }
 ```
 
-### yourapp/urls.py
+### apps/yourapp/urls.py
 ```python
 from rest_framework.routers import DefaultRouter
 from .views.task import TaskViewSet
@@ -3613,19 +3633,19 @@ urlpatterns = router.urls
 这意味着在开发新的RESTful API时，你不需要检查或修改这些系统配置文件，因为它们已经完全适配了REST Framework的所有需求。
 每个应用的RESTful API开发只需要专注于以下5个核心文件：
 
-1. 模型定义（yourapp/models/task.py）
-2. 序列化器（yourapp/serializers/task.py）
-3. API视图（yourapp/views/task.py）
-4. URL配置（yourapp/urls.py）
-5. API测试（yourapp/tests/test_task_api.py）
+1. 模型定义（apps/yourapp/models/task.py）
+2. 序列化器（apps/yourapp/serializers/task.py）
+3. API视图（apps/yourapp/views/task.py）
+4. URL配置（apps/yourapp/urls.py）
+5. API测试（apps/yourapp/tests/test_task_api.py）
 
 ## 开发顺序建议
 
-1. 首先实现模型（yourapp/models/task.py）
-2. 然后是序列化器（yourapp/serializers/task.py）
-3. 接着是视图（yourapp/views/task.py）
-4. 配置URL（yourapp/urls.py）
-5. 最后编写测试（yourapp/tests/test_task_api.py）
+1. 首先实现模型（apps/yourapp/models/task.py）
+2. 然后是序列化器（apps/yourapp/serializers/task.py）
+3. 接着是视图（apps/yourapp/views/task.py）
+4. 配置URL（apps/yourapp/urls.py）
+5. 最后编写测试（apps/yourapp/tests/test_task_api.py）
 
 ## 注意事项
 
