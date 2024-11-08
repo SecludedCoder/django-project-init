@@ -1159,6 +1159,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework.authtoken',
     'drf_yasg',  # Swagger/OpenAPI文档
 {chr(10).join(app_configs) if app_configs else ''}
 ]
@@ -1234,6 +1235,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {{
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',  # 开发阶段允许所有访问
+    ],
+    # 新增认证类配置
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -3595,13 +3601,31 @@ urlpatterns = router.urls
 }
 ```
 
+## RESTful API开发前提说明
+使用项目初始化脚本自动生成的项目模板已经完全支持RESTful API开发，以下系统配置文件已经完成了所有必要的配置：
+
+1. config/settings/base.py (包含REST Framework配置和认证设置)
+2. config/settings/local.py (包含开发环境特定配置)
+3. config/settings/logging_config.py (包含完整的日志配置)
+4. config/settings/production.py (包含生产环境配置)
+5. config/urls.py (包含URL路由基础配置)
+
+这意味着在开发新的RESTful API时，你不需要检查或修改这些系统配置文件，因为它们已经完全适配了REST Framework的所有需求。
+每个应用的RESTful API开发只需要专注于以下5个核心文件：
+
+1. 模型定义（yourapp/models/task.py）
+2. 序列化器（yourapp/serializers/task.py）
+3. API视图（yourapp/views/task.py）
+4. URL配置（yourapp/urls.py）
+5. API测试（yourapp/tests/test_task_api.py）
+
 ## 开发顺序建议
 
-1. 首先实现模型（models/task.py）
-2. 然后是序列化器（serializers/task.py）
-3. 接着是视图（views/task.py）
-4. 配置URL（urls.py）
-5. 最后编写测试（tests/test_task_api.py）
+1. 首先实现模型（yourapp/models/task.py）
+2. 然后是序列化器（yourapp/serializers/task.py）
+3. 接着是视图（yourapp/views/task.py）
+4. 配置URL（yourapp/urls.py）
+5. 最后编写测试（yourapp/tests/test_task_api.py）
 
 ## 注意事项
 
