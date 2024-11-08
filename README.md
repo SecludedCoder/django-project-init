@@ -154,6 +154,9 @@ app_name/
 ├── models/             # [更新] Django模型目录
 │   ├── __init__.py    # 导出所有模型
 │   └── base.py        # 基础模型定义
+├── serializers/        # [新增] 序列化器目录
+│   ├── __init__.py    # 导出所有序列化器
+│   └── base.py        # 基础序列化器定义
 ├── views/             # [更新] 视图目录
 │   ├── __init__.py    # 导出所有视图
 │   └── base.py        # 基础视图定义
@@ -169,7 +172,6 @@ app_name/
 │       ├── js/       # JavaScript文件
 │       └── images/   # 图片资源
 ├── api/               # REST API
-│   ├── serializers.py # API序列化器
 │   ├── views.py      # API视图
 │   └── urls.py       # API路由配置
 ├── services/         # 业务服务层（集成层）
