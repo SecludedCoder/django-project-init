@@ -48,6 +48,20 @@ chmod +x django_project_init.py
 
 如果尝试使用这些名称，脚本会提供错误提示并建议替代名称。
 
+## 应用命名规范
+
+为确保应用名称符合Django最佳实践：
+- 使用小写字母
+- 使用下划线分隔单词
+- 避免使用中划线或驼峰命名
+- 名称应该清晰描述应用功能
+
+例如：
+- ✅ `customer_service`
+- ✅ `user_management`
+- ❌ `CustomerService`
+- ❌ `customer-service`
+
 ## 快速开始
 
 ### 创建新项目
@@ -192,6 +206,23 @@ app_name/
 ├── exceptions.py  # Django相关异常
 └── utils.py      # Django相关工具函数
 ```
+
+### 重要配置说明
+
+1. 应用路径
+- 所有应用都位于 `apps` 目录下
+- 导入时使用完整路径：`from apps.{app_name} import ...`
+- 应用配置中使用完整路径：`name = 'apps.{app_name}'`
+
+2. 模型配置
+- 所有模型必须显式声明 `app_label`
+- Meta 类中必须包含必要的配置项
+- 建议添加适当的索引定义
+
+3. URL配置
+- 使用完整的应用路径
+- 确保正确导入 include
+- 路由名称要与应用名匹配
 
 ## 版本历史
 

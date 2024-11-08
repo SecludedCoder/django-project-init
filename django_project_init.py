@@ -6,6 +6,7 @@ Purpose: Django项目初始化脚本，用于创建符合最佳实践的项目�
 """
 
 import datetime
+import re
 import os
 import sys
 import shutil
@@ -188,6 +189,9 @@ def create_file(path, content=''):
 
 def create_app_structure(app_name, project_name, base_dir):
     """创建应用的完整目录结构和文件"""
+    normalized_app_name = normalize_app_name(app_name)
+    class_name = get_app_class_name(normalized_app_name)
+
     app_dir = base_dir / 'apps' / app_name
 
     # 创建应用基础目录
@@ -309,21 +313,21 @@ class BaseForm(forms.Form):
 File: apps/{app_name}/models/__init__.py
 Purpose: 汇总导出所有模型
 """
-from .base import BaseModel
+from apps.{normalized_app_name}.models.base import BaseModel
 ''',
 
         'views/__init__.py': f'''"""
 File: apps/{app_name}/views/__init__.py
 Purpose: 汇总导出所有视图
 """
-from .base import BaseView
+from apps.{normalized_app_name}.views.base import BaseView
 ''',
 
         'forms/__init__.py': f'''"""
 File: apps/{app_name}/forms/__init__.py
 Purpose: 汇总导出所有表单
 """
-from .base import BaseForm
+from apps.{normalized_app_name}.forms.base import BaseForm
 '''
     })
 
@@ -350,8 +354,8 @@ File: apps/{app_name}/views/excel_processor.py
 Purpose: Excel处理视图
 """
 
-from .base import BaseView
-from ..services.excel_service import ExcelService
+from apps.{normalized_app_name}.views.base import BaseView
+from apps.{normalized_app_name}.services.excel_service import ExcelService
 
 class ExcelUploadView(BaseView):
     template_name = '{app_name}/excel_upload.html'
@@ -381,33 +385,36 @@ class ExcelUploadForm(BaseForm):
 '''
         })
 
+    normalized_app_name = normalize_app_name(app_name)
+    class_name = get_app_class_name(normalized_app_name)
+
     # 创建应用基础文件
     files = {
-        '__init__.py': f'"""\nFile: apps/{app_name}/__init__.py\nPurpose: {app_name}应用的初始化文件\n"""\n',
+        '__init__.py': f'"""\nFile: apps/{normalized_app_name}/__init__.py\nPurpose: {normalized_app_name}应用的初始化文件\n"""\n',
 
         'apps.py': f'''"""
-File: apps/{app_name}/apps.py
-Purpose: {app_name}应用的配置类
+File: apps/{normalized_app_name}/apps.py
+Purpose: {normalized_app_name}应用的配置类
 Warning: 此文件由系统自动生成，请勿手动修改
 """
 
 from django.apps import AppConfig
 
-class {app_name.title()}Config(AppConfig):
+class {class_name}Config(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = '{app_name}'
-    verbose_name = '{app_name.title()}模块'
+    name = 'apps.{normalized_app_name}'
+    verbose_name = '{normalized_app_name.title().replace("_", " ")}模块'
 ''',
 
         'urls.py': f'''"""
-File: apps/{app_name}/urls.py
-Purpose: {app_name}应用的URL配置
+File: apps/{normalized_app_name}/urls.py
+Purpose: {normalized_app_name}应用的URL配置
 """
 
 from django.urls import path
-from .views.base import BaseView
+from apps.{normalized_app_name}.views.base import BaseView
 
-app_name = '{app_name}'
+app_name = '{normalized_app_name}'
 
 urlpatterns = [
     path('', BaseView.as_view(), name='index'),
@@ -464,16 +471,6 @@ Purpose: {app_name}应用的格式化助手函数
 
 # Formatting helper functions
 ''',
-
-#         'api/serializers.py': f'''"""
-# File: apps/{app_name}/api/serializers.py
-# Purpose: {app_name}应用的API序列化器
-# """
-#
-# from rest_framework import serializers
-#
-# # API Serializers
-# ''',
 
         'api/views.py': f'''"""
 File: apps/{app_name}/api/views.py
@@ -1108,7 +1105,7 @@ def create_project_structure(project_name):
     app_configs = []
     if INITIAL_APPS:
         for app in INITIAL_APPS:
-            app_configs.append(f"    '{app}.apps.{app.title()}Config',")
+            app_configs.append(f"    'apps.{app}.apps.{app.title().replace('_', '')}Config',")
 
     # 创建项目根目录
     if not create_directory(base_dir):
@@ -1161,6 +1158,7 @@ from .logging_config import LOGGING
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # 添加apps目录到Python路径
+sys.path.append(str(BASE_DIR))
 sys.path.append(str(BASE_DIR / 'apps'))
 
 # Quick-start development settings - unsuitable for production
@@ -1415,9 +1413,9 @@ urlpatterns = [
     for app in INITIAL_APPS:
         # 主应用作为根URL
         if app == 'main':
-            urls_py += f"    path('', include('main.urls')),  # 主应用作为根URL\n"
+            urls_py += f"    path('', include('apps.main.urls')),  # 主应用作为根URL\n"
         else:
-            urls_py += f"    path('{app}/', include('{app}.urls')),\n"
+            urls_py += f"    path('{app}/', include('apps.{app}.urls')),\n"
 
     # 添加结尾部分
     urls_py += ''']
@@ -2966,10 +2964,10 @@ Warning: 此文件由系统自动生成，请勿手动修改
 
 from django.apps import AppConfig
 
-class {app_name.title()}Config(AppConfig):
+class {app_name.title().replace('_', '')}Config(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = '{app_name}'
-    verbose_name = '{app_name.title()}模块'
+    name = 'apps.{app_name}'
+    verbose_name = '{app_name.title().replace("_", " ")}模块'
 '''
         }
 
@@ -3496,22 +3494,23 @@ urlpatterns = [
 from django.db import models
 
 class Task(models.Model):
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    status = models.CharField(
-        max_length=20,
-        choices=[
-            ('pending', '待处理'),
-            ('in_progress', '处理中'),
-            ('completed', '已完成'),
-        ],
-        default='pending'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
+    # ... 字段定义 ...
+    
     class Meta:
+        # 重要：必须显式声明app_label，确保模型正确关联到应用
+        # 这里的值应该是应用的短名称（不包含apps前缀）
+        app_label = 'yourapp'  
+        
+        # 其他 Meta 选项
         ordering = ['-created_at']
+        verbose_name = '任务'
+        verbose_name_plural = '任务列表'
+        
+        # 可选：添加索引以提升查询性能
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at'])
+        ]
 ```
 
 ### apps/yourapp/serializers/task.py
@@ -3782,6 +3781,23 @@ your_app/
 
 注：本文档为精简版，完整版请参考 django_rest_api_lightweight_specification_and_implementation_guide.md
 '''
+
+def normalize_app_name(app_name):
+    """
+    规范化应用名称
+    - 输入可以是任何形式（下划线或驼峰）
+    - 输出符合Django命名规范（小写+下划线）
+    """
+    # 先将驼峰转换为下划线形式
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', app_name)
+    normalized = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+    return normalized
+
+def get_app_class_name(app_name):
+    """
+    获取应用配置类名称（PascalCase）
+    """
+    return ''.join(word.title() for word in app_name.split('_'))
 
 def main():
     """主函数：处理参数并根据模式执行相应操作"""
