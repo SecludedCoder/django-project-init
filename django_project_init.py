@@ -3629,6 +3629,11 @@ urlpatterns = router.urls
 4. config/settings/production.py (包含生产环境配置)
 5. config/urls.py (包含URL路由基础配置)
 
+注意：以下文件路径中的"task"仅为示例，应根据具体业务功能命名。
+建议为不同的业务功能创建独立的文件，避免多个功能共用同一个文件。
+例如：如果开发用户管理功能，应该使用"user"替换"task"；
+如果开发订单管理功能，应该使用"order"替换"task"。
+
 这意味着在开发新的RESTful API时，你不需要检查或修改这些系统配置文件，因为它们已经完全适配了REST Framework的所有需求。
 每个应用的RESTful API开发只需要专注于以下5个核心文件：
 
